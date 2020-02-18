@@ -25,6 +25,13 @@ function listAppUsers {
     done
 }
 
+
+# getSysUserInfo `1.username`
+# to get information about System user in /etc/passwd
+# return    `uid`   - (user id)
+#           `gid`   - (group id)
+#           `dir`   - (home dir)
+#           `shell` - (shell)
 function getSysUserInfo {
     uid=$(cat /etc/passwd | grep "$1" | cut -d ':' -f3)
     gid=$(cat /etc/passwd | grep "$1" | cut -d ':' -f4)
@@ -32,6 +39,13 @@ function getSysUserInfo {
     shell=$(cat /etc/passwd | grep "$1" | cut -d ':' -f7)
 }
 
+
+# getDefUserInfo `1.username`
+# to get information about default user that are create by vendor specified in $dataDir/users
+# return    `uid`   - (user id)
+#           `gid`   - (group id)
+#           `dir`   - (home dir)
+#           `shell` - (shell)
 function getDefUserInfo {
     uid=$($dataDir/users | grep "$1" | cut -d ' ' -f1)
     gid=$($dataDir/users | grep "$1" | cut -d ' ' -f2)
@@ -39,6 +53,13 @@ function getDefUserInfo {
     dir=$($dataDir/users | grep "$1" | cut -d ' ' -f5)
 }
 
+
+# getAppUserInfo `1.username`
+# to get information about users need by user application 
+# return    `uid`   - (user id)
+#           `gid`   - (group id)
+#           `dir`   - (home dir)
+#           `shell` - (shell)
 function getAppUserInfo {
     for i in $appDataDir/* ; do
         if [ -f $i/usrgrp ] ; then
@@ -52,6 +73,7 @@ function getAppUserInfo {
         fi
     done
 }
+
 
 
 function checkUsersExistence {
@@ -74,6 +96,11 @@ function checkUsersExistence {
 }
 
 # infoUser `1.user`
+# To Get Information about user of any type
+# return    `uid`   - (user id)
+#           `gid`   - (group id)
+#           `dir`   - (home dir)
+#           `shell` - (shell)
 function infoUser {
     if IsInList $1 "$(listSystemUsers)" ; then
         status="0"
@@ -137,7 +164,7 @@ function Checkup {
 
 function AddMissing {
     CheckRoot
-    
+
     Checkup
     if [ -n "$MissingUsers" ] ; then
         for i in $MissingUsers ; do
@@ -162,7 +189,7 @@ function PrintHelp {
     echo "  checkup                         to perform checkup of users and groups"
     echo "  detail | info                   to get information about user or group"
     echo "  list   | ls                     to get list of system users"
-    echo "  add-missing | adms              to add missing users"
+    echo "  add-missing                     to add missing users and group"
 }
 
 if [ -z "$1" ] ; then
