@@ -1,0 +1,197 @@
+#!/bin/bash
+
+
+source /usr/lib/rsb/io.sh
+source /usr/lib/rsb/app.sh
+appConfig=${appConfig:-"/etc/app.conf"}
+dataDir=${dataDir:-"share/usrgrp"}
+
+appDataDir=$(GetVal $appConfig "data_dir")
+
+function listSystemUsers {
+    cat /etc/passwd | cut -d ':' -f1
+}
+
+function listDefultUsers {
+    cat $dataDir/users | cut -d ' ' -f1
+}
+
+function listAppUsers {
+    for i in $appDataDir/* ; do
+        if [ -f $i/usrgrp ] ; then
+            BYAPP="$i"
+            cat $i/usrgrp | grep "usr" | cut -d ' ' -f2
+        fi
+    done
+}
+
+function getSysUserInfo {
+    uid=$(cat /etc/passwd | grep "$1" | cut -d ':' -f3)
+    gid=$(cat /etc/passwd | grep "$1" | cut -d ':' -f4)
+    dir=$(cat /etc/passwd | grep "$1" | cut -d ':' -f6)
+    shell=$(cat /etc/passwd | grep "$1" | cut -d ':' -f7)
+}
+
+function getDefUserInfo {
+    uid=$($dataDir/users | grep "$1" | cut -d ' ' -f1)
+    gid=$($dataDir/users | grep "$1" | cut -d ' ' -f2)
+    shell=$($dataDir/users | grep "$1" | cut -d ' ' -f4)
+    dir=$($dataDir/users | grep "$1" | cut -d ' ' -f5)
+}
+
+function getAppUserInfo {
+    for i in $appDataDir/* ; do
+        if [ -f $i/usrgrp ] ; then
+            if [[ $(cat $i/usrgrp | grep "usr" | cut -d ' ' -f2) == "$1" ]] ; then
+                BYAPP=$(cat $i/info | grep "name:" | awk '{print $2}')
+                uid=$(cat $i/usrgrp | grep "usr" | cut -d ' ' -f3)
+                gid=$(cat $i/usrgrp | grep "usr" | cut -d ' ' -f4)
+                shell=$(cat $i/usrgrp | grep "usr" | cut -d ' ' -f6)
+                dir=$(cat $i/usrgrp | grep "usr" | cut -d ' ' -f7)
+            fi
+        fi
+    done
+}
+
+
+function checkUsersExistence {
+
+    for i in $(listAppUsers) $(listDefultUsers) ; do
+        found=1
+        for j in $(listSystemUsers) ; do
+            if [ "$i" == "$j" ] ; then
+                found=0
+                break
+            fi
+        done
+
+        if [ "$found" != "0" ] ; then
+            MissingUsers="$MissingUsers $i"
+        fi
+
+    done
+
+}
+
+# infoUser `1.user`
+function infoUser {
+    if IsInList $1 "$(listSystemUsers)" ; then
+        status="0"
+        
+        getSysUserInfo $1
+    else
+        status="1"
+        if IsInList $1 "$(listDefultUsers)" ; then
+            neededby="system"
+            getDefUserInfo $1
+        elif IsInList $1 "$(listAppUsers)" ; then
+            getAppUserInfo $1
+            neededby="$BYAPP"
+        else
+            status="-1"
+        fi
+    fi
+}
+
+function PrintUserInfo {
+    infoUser $1
+    if [[ "$status" == "0" ]] ; then
+        PrintDetail "Status" "Ok" $GREEN
+
+    elif [[ "$status" == "1" ]] ; then
+        PrintDetail "Status" "not exit" $RED
+        PrintDetail "Needed by" "$neededby"
+    else
+        err "unable to get information about $1"
+        exit 0
+    fi
+
+    PrintDetail "User Name" "$1"
+    PrintDetail "User ID" "$uid"
+    PrintDetail "Group ID" "$gid"
+    PrintDetail "Home Dir" "$dir"
+    PrintDetail "Default Shell" "$shell"
+}
+
+function IsInList {
+    for i in $2 ; do
+        if [ "$1" == "$i" ] ; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+function Checkup {
+    Process "Checking System Users"
+    checkUsersExistence
+    if [ -n "$MissingUsers" ] ; then
+        Check 1
+        err "Missing user(s) - $(echo $MissingUsers | tr ' ' ',')"
+        return 1
+    else
+        Check 0
+        return 0
+    fi
+}
+
+function AddMissing {
+    CheckRoot
+    
+    Checkup
+    if [ -n "$MissingUsers" ] ; then
+        for i in $MissingUsers ; do
+            process "Adding user '$i'"
+            infoUser $i
+            if [[ "$status" == "-1" ]] ; then
+                err "no information about $i"
+                continue
+            fi
+            useradd $i -g $gid -u $uid -c $neededby -s $shell -d $dir
+        done
+    else
+        success "no missing user"
+        return 0
+    fi
+}
+
+function PrintHelp {
+    echo "System User Group Managment tool"
+    echo "to manage sys users and groups"
+    echo "Usage:"
+    echo "  checkup                         to perform checkup of users and groups"
+    echo "  detail | info                   to get information about user or group"
+    echo "  list   | ls                     to get list of system users"
+    echo "  add-missing | adms              to add missing users"
+}
+
+if [ -z "$1" ] ; then
+    PrintHelp
+    exit 0
+fi
+
+task=$1
+shift
+
+case "$task" in
+    checkup)
+        Checkup
+        ;;
+
+    detail|info)
+        PrintUserInfo $1
+        ;;
+
+    list|ls)
+        listSystemUsers
+        ;;
+
+    add-missing|adms)
+        AddMissing
+        ;;
+    
+    *)
+        err "invalid task $task"
+        PrintHelp
+        ;;
+esac
